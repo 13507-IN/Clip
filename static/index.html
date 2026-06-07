@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URL Shortener</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f0f13; color: #e0e0e0; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .container { width: 100%; max-width: 640px; padding: 2rem 1rem; }
+  h1 {
+    font-size: 2rem; font-weight: 700; text-align: center;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+  .subtitle { text-align: center; color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+  .card {
+    background: #1a1a24; border-radius: 12px; padding: 1.5rem;
+    border: 1px solid #2a2a3a;
+  }
+  .input-group { display: flex; gap: 0.5rem; }
+  .input-group input {
+    flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #333;
+    background: #12121c; color: #e0e0e0; font-size: 1rem; outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-group input:focus { border-color: #a78bfa; }
+  .input-group button {
+    padding: 0.75rem 1.5rem; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa); color: #fff;
+    font-size: 1rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: opacity 0.2s;
+  }
+  .input-group button:hover { opacity: 0.9; }
+  .input-group button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .result { margin-top: 1rem; display: none; }
+  .result.show { display: block; }
+  .result-box {
+    background: #12121c; border: 1px solid #2a2a3a; border-radius: 8px;
+    padding: 1rem; display: flex; align-items: center; gap: 0.75rem;
+  }
+  .result-box .url { flex: 1; color: #a78bfa; word-break: break-all; }
+  .result-box .copy-btn {
+    padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #333;
+    background: transparent; color: #aaa; cursor: pointer; font-size: 0.85rem;
+    transition: all 0.2s; white-space: nowrap;
+  }
+  .result-box .copy-btn:hover { border-color: #a78bfa; color: #a78bfa; }
+  .error { color: #f87171; margin-top: 0.75rem; display: none; font-size: 0.9rem; }
+  .error.show { display: block; }
+  .stats-link { margin-top: 2rem; text-align: center; }
+  .stats-link a { color: #60a5fa; font-size: 0.85rem; text-decoration: none; }
+  .stats-link a:hover { text-decoration: underline; }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
+    border-top-color: #fff; animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>URL Shortener</h1>
+  <p class="subtitle">Paste a long URL and get a short, shareable link</p>
+  <div class="card">
+    <div class="input-group">
+      <input type="url" id="urlInput" placeholder="https://example.com/very/long/url" autofocus>
+      <button id="shortenBtn">Shorten</button>
+    </div>
+    <div class="result" id="result">
+      <div class="result-box">
+        <span class="url" id="shortUrl"></span>
+        <button class="copy-btn" id="copyBtn">Copy</button>
+      </div>
+    </div>
+    <div class="error" id="error"></div>
+  </div>
+  <div class="stats-link">
+    <a href="#" id="statsLink">Stats</a>
+  </div>
+</div>
+<script>
+const input = document.getElementById('urlInput');
+const btn = document.getElementById('shortenBtn');
+const result = document.getElementById('result');
+const shortUrl = document.getElementById('shortUrl');
+const copyBtn = document.getElementById('copyBtn');
+const error = document.getElementById('error');
+const statsLink = document.getElementById('statsLink');
+
+btn.addEventListener('click', shorten);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') shorten(); });
+input.addEventListener('input', () => { result.classList.remove('show'); error.classList.remove('show'); });
+
+async function shorten() {
+  const url = input.value.trim();
+  if (!url) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  error.classList.remove('show');
+  result.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/shorten', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(data.error || 'Something went wrong');
+      return;
+    }
+    shortUrl.textContent = data.short_url;
+    shortUrl.href = data.short_url;
+    result.classList.add('show');
+    statsLink.href = '/api/stats/' + data.short_code;
+    statsLink.textContent = 'Stats for ' + data.short_code;
+  } catch (e) {
+    showError('Network error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Shorten';
+  }
+}
+
+copyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(shortUrl.textContent).then(() => {
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+  });
+});
+
+function showError(msg) {
+  error.textContent = msg;
+  error.classList.add('show');
+}
+</script>
+</body>
+</html>
