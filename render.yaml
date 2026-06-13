@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: url-shortener
+    env: docker
+    # We define a persistent disk here for the SQLite database
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: LISTEN_ADDR
+        value: "0.0.0.0:8080"
+      - key: BASE_URL
+        # NOTE: You will need to change this to your actual Render URL later
+        value: "https://url-shortener.onrender.com"
+      - key: DB_PATH
+        value: "/data/urlshortener.db"
+      - key: RUST_LOG
+        value: "info"
