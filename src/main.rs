@@ -27,10 +27,10 @@ async fn main() {
     let addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| ":8080".into());
     let base_url =
         std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".into());
-    let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| "urlshortener.db".into());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".into());
 
     let store = Arc::new(
-        store::Store::new(&db_path).expect("failed to open database"),
+        store::Store::new(&database_url).await.expect("failed to open database"),
     );
     let cache = Arc::new(Mutex::new(cache::Cache::new(50000)));
     let counter = Arc::new(AtomicU64::new(0));

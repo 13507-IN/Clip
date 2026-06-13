@@ -8,11 +8,21 @@ services:
     environment:
       - LISTEN_ADDR=:8080
       - BASE_URL=http://localhost:8080
-      - DB_PATH=/data/urlshortener.db
+      - DATABASE_URL=postgres://postgres:password@db:5432/postgres
       - RUST_LOG=info
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
     volumes:
-      - urlshortener_data:/data
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  urlshortener_data:
+  postgres_data:

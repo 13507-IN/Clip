@@ -1,93 +1,91 @@
-use rusqlite::{params, Connection, Result as SqlResult};
+use sqlx::{PgPool, Error as SqlxError};
 
 use crate::model::UrlEntry;
 
 pub struct Store {
-    conn: Connection,
+    pool: PgPool,
 }
 
 impl Store {
-    pub fn new(path: &str) -> SqlResult<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode = WAL")?;
-        conn.execute_batch("PRAGMA busy_timeout = 5000")?;
-        conn.execute_batch("PRAGMA synchronous = NORMAL")?;
-        conn.execute_batch("PRAGMA cache_size = -20000")?;
-
-        let store = Self { conn };
-        store.migrate()?;
+    pub async fn new(database_url: &str) -> Result<Self, SqlxError> {
+        let pool = PgPool::connect(database_url).await?;
+        
+        let store = Self { pool };
+        store.migrate().await?;
         Ok(store)
     }
 
-    fn migrate(&self) -> SqlResult<()> {
-        self.conn.execute_batch(
+    async fn migrate(&self) -> Result<(), SqlxError> {
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS urls (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 short_code TEXT NOT NULL UNIQUE,
                 original TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                clicks INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_short_code ON urls(short_code);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_original ON urls(original);",
+                clicks BIGINT NOT NULL DEFAULT 0
+            );"
         )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_short_code ON urls(short_code);")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_original ON urls(original);")
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 
-    pub fn insert(&self, short_code: &str, original: &str) -> SqlResult<UrlEntry> {
+    pub async fn insert(&self, short_code: &str, original: &str) -> Result<UrlEntry, SqlxError> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT INTO urls (short_code, original, created_at) VALUES (?1, ?2, ?3)",
-            params![short_code, original, now],
-        )?;
-        let id = self.conn.last_insert_rowid();
-        Ok(UrlEntry {
-            id,
-            short_code: short_code.to_string(),
-            original: original.to_string(),
-            created_at: now,
-            clicks: 0,
-        })
+        
+        let row = sqlx::query_as::<_, UrlEntry>(
+            "INSERT INTO urls (short_code, original, created_at) 
+             VALUES ($1, $2, $3)
+             RETURNING id, short_code, original, created_at, clicks"
+        )
+        .bind(short_code)
+        .bind(original)
+        .bind(&now)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row)
     }
 
-    pub fn get_by_short_code(&self, code: &str) -> SqlResult<Option<UrlEntry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, short_code, original, created_at, clicks FROM urls WHERE short_code = ?1",
-        )?;
-        let mut rows = stmt.query(params![code])?;
-        match rows.next()? {
-            Some(row) => Ok(Some(UrlEntry {
-                id: row.get(0)?,
-                short_code: row.get(1)?,
-                original: row.get(2)?,
-                created_at: row.get(3)?,
-                clicks: row.get(4)?,
-            })),
-            None => Ok(None),
-        }
+    pub async fn get_by_short_code(&self, code: &str) -> Result<Option<UrlEntry>, SqlxError> {
+        let row = sqlx::query_as::<_, UrlEntry>(
+            "SELECT id, short_code, original, created_at, clicks
+             FROM urls WHERE short_code = $1"
+        )
+        .bind(code)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row)
     }
 
-    pub fn get_by_original(&self, original: &str) -> SqlResult<Option<UrlEntry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, short_code, original, created_at, clicks FROM urls WHERE original = ?1",
-        )?;
-        let mut rows = stmt.query(params![original])?;
-        match rows.next()? {
-            Some(row) => Ok(Some(UrlEntry {
-                id: row.get(0)?,
-                short_code: row.get(1)?,
-                original: row.get(2)?,
-                created_at: row.get(3)?,
-                clicks: row.get(4)?,
-            })),
-            None => Ok(None),
-        }
+    pub async fn get_by_original(&self, original: &str) -> Result<Option<UrlEntry>, SqlxError> {
+        let row = sqlx::query_as::<_, UrlEntry>(
+            "SELECT id, short_code, original, created_at, clicks
+             FROM urls WHERE original = $1"
+        )
+        .bind(original)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row)
     }
 
-    pub fn increment_clicks(&self, code: &str) -> SqlResult<()> {
-        self.conn.execute(
-            "UPDATE urls SET clicks = clicks + 1 WHERE short_code = ?1",
-            params![code],
-        )?;
+    pub async fn increment_clicks(&self, code: &str) -> Result<(), SqlxError> {
+        sqlx::query("UPDATE urls SET clicks = clicks + 1 WHERE short_code = $1")
+        .bind(code)
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 }

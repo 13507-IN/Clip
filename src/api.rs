@@ -42,7 +42,7 @@ pub async fn shorten(
     }
 
     // Check for existing URL
-    match state.store.get_by_original(&original) {
+    match state.store.get_by_original(&original).await {
         Ok(Some(entry)) => {
             let mut cache = state.cache.lock().unwrap();
             cache.set(entry.short_code.clone(), entry.original.clone());
@@ -67,7 +67,7 @@ pub async fn shorten(
         let id = state.counter.fetch_add(1, Ordering::Relaxed);
         let short_code = shortener::generate_short_code(id);
 
-        match state.store.insert(&short_code, &original) {
+        match state.store.insert(&short_code, &original).await {
             Ok(entry) => {
                 let mut cache = state.cache.lock().unwrap();
                 cache.set(entry.short_code.clone(), entry.original.clone());
@@ -111,19 +111,19 @@ pub async fn redirect(
     {
         let mut cache = state.cache.lock().unwrap();
         if let Some(original) = cache.get(&code).map(|s| s.to_string()) {
-            let _ = state.store.increment_clicks(&code);
+            let _ = state.store.increment_clicks(&code).await;
             return Redirect::permanent(&original).into_response();
         }
     }
 
-    match state.store.get_by_short_code(&code) {
+    match state.store.get_by_short_code(&code).await {
         Ok(Some(entry)) => {
             // Populate cache
             {
                 let mut cache = state.cache.lock().unwrap();
                 cache.set(entry.short_code.clone(), entry.original.clone());
             }
-            let _ = state.store.increment_clicks(&code);
+            let _ = state.store.increment_clicks(&code).await;
             Redirect::permanent(&entry.original).into_response()
         }
         Ok(None) => json_response(StatusCode::NOT_FOUND, ErrorResponse {
@@ -148,7 +148,7 @@ pub async fn stats(
         });
     }
 
-    match state.store.get_by_short_code(&code) {
+    match state.store.get_by_short_code(&code).await {
         Ok(Some(entry)) => json_response(StatusCode::OK, StatsResponse {
             short_code: entry.short_code.clone(),
             original: entry.original,
